@@ -1,5 +1,6 @@
 package dev.priceview;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -18,7 +19,6 @@ import java.util.concurrent.TimeUnit;
 /** Downloads and caches Bazaar + lowest-BIN prices in the background. */
 public final class PriceData {
     private static final String BAZAAR_URL = "https://api.hypixel.net/v2/skyblock/bazaar";
-    // Community-run lowest BIN feed (item id -> lowest BIN price).
     private static final String LOWEST_BIN_URL = "https://moulberry.codes/lowestbin.json";
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -33,12 +33,14 @@ public final class PriceData {
     private PriceData() {}
 
     public static void start() {
-        ScheduledExecutorService ex = Executors.newSingleThreadScheduledExecutor(r -> {
+        ScheduledExecutorService ex = Executors.newScheduledThreadPool(2, r -> {
             Thread t = new Thread(r, "priceview-refresh");
             t.setDaemon(true);
             return t;
         });
-        ex.scheduleWithFixedDelay(PriceData::refresh, 0, 3, TimeUnit.MINUTES);
+        // Hypixel refreshes Bazaar data about every 10-20s, so 10s is the useful minimum.
+        ex.scheduleWithFixedDelay(PriceData::refreshBazaar, 0, 10, TimeUnit.SECONDS);
+        ex.scheduleWithFixedDelay(PriceData::refreshBins, 0, 60, TimeUnit.SECONDS);
     }
 
     public static boolean isReady() {
@@ -53,22 +55,36 @@ public final class PriceData {
         return bins.get(id);
     }
 
-    private static void refresh() {
+    private static void refreshBazaar() {
         try {
             JsonObject root = JsonParser.parseString(fetch(BAZAAR_URL)).getAsJsonObject();
             if (root.has("success") && root.get("success").getAsBoolean()) {
                 Map<String, double[]> map = new HashMap<>();
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("products").entrySet()) {
-                    JsonObject qs = e.getValue().getAsJsonObject().getAsJsonObject("quick_status");
-                    map.put(e.getKey(), new double[]{
-                            qs.get("buyPrice").getAsDouble(),
-                            qs.get("sellPrice").getAsDouble()});
+                    JsonObject p = e.getValue().getAsJsonObject();
+                    JsonObject qs = p.getAsJsonObject("quick_status");
+                    double buy = qs.get("buyPrice").getAsDouble();
+                    double sell = qs.get("sellPrice").getAsDouble();
+
+                    // Top of the order book = the price you really pay / get for an instant trade.
+                    JsonArray sellOrders = p.getAsJsonArray("sell_summary");
+                    JsonArray buyOrders = p.getAsJsonArray("buy_summary");
+                    if (sellOrders != null && sellOrders.size() > 0) {
+                        buy = sellOrders.get(0).getAsJsonObject().get("pricePerUnit").getAsDouble();
+                    }
+                    if (buyOrders != null && buyOrders.size() > 0) {
+                        sell = buyOrders.get(0).getAsJsonObject().get("pricePerUnit").getAsDouble();
+                    }
+                    map.put(e.getKey(), new double[]{buy, sell});
                 }
                 bazaar = map;
             }
         } catch (Exception ex) {
             PriceViewMod.LOGGER.warn("Bazaar refresh failed: {}", ex.toString());
         }
+    }
+
+    private static void refreshBins() {
         try {
             JsonObject root = JsonParser.parseString(fetch(LOWEST_BIN_URL)).getAsJsonObject();
             Map<String, Double> map = new HashMap<>();
