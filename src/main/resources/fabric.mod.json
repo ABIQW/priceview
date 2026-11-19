@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "priceview",
+  "version": "${version}",
+  "name": "PriceView",
+  "description": "Shows SkyBlock market prices (Bazaar / lowest BIN) and whether an item is sellable, in item tooltips.",
+  "authors": ["You"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.priceview.PriceViewMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
