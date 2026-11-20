@@ -14,37 +14,24 @@ public class PriceViewMod implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        PriceData.start();
-
         ItemTooltipCallback.EVENT.register((stack, context, type, lines) -> {
             String key = ItemIdResolver.resolve(stack);
             if (key == null) return; // not a SkyBlock item
 
-            if (!PriceData.isReady()) {
-                lines.add(Component.literal("Prices loading...").withStyle(ChatFormatting.GRAY));
-                return;
-            }
-
-            double[] bz = PriceData.bazaar(key);
-            Double bin = PriceData.bin(key);
+            PriceData.Info info = PriceData.get(key);
             int count = stack.getCount();
 
-            // Not on the market at all -> not sellable, no price shown.
-            if (bz == null && bin == null) {
-                lines.add(Component.literal("Sellable: ").withStyle(ChatFormatting.GRAY)
+            switch (info.state()) {
+                case LOADING -> lines.add(Component.literal("Prices loading...").withStyle(ChatFormatting.GRAY));
+                case ERROR -> lines.add(Component.literal("Price unavailable").withStyle(ChatFormatting.GRAY));
+                case NOT_SELLABLE -> lines.add(Component.literal("Sellable: ").withStyle(ChatFormatting.GRAY)
                         .append(Component.literal("No").withStyle(ChatFormatting.RED)));
-                return;
-            }
-
-            lines.add(Component.literal("Sellable: ").withStyle(ChatFormatting.GRAY)
-                    .append(Component.literal("Yes").withStyle(ChatFormatting.GREEN)));
-
-            if (bz != null) {
-                lines.add(line("Bazaar Buy", bz[0], count));
-                lines.add(line("Bazaar Sell", bz[1], count));
-            }
-            if (bin != null) {
-                lines.add(line("Lowest BIN", bin, 1));
+                case SELLABLE -> {
+                    lines.add(Component.literal("Sellable: ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal("Yes").withStyle(ChatFormatting.GREEN)));
+                    lines.add(line("Bazaar Buy", info.buy(), count));
+                    lines.add(line("Bazaar Sell", info.sell(), count));
+                }
             }
         });
     }
